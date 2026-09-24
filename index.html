@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
-<meta name="apple-mobile-web-app-title" content="Thumb Reach">
+<meta name="apple-mobile-web-app-title" content="Finger Reach">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -231,7 +231,7 @@
 
 <!-- State 0: Welcome -->
 <section class="overlay" id="welcome">
-  <h1>Thumb Reach Test</h1>
+  <h1>Finger Reach Test</h1>
   <p>You'll map your reach twice: first holding your phone however you like, then one-handed with the thumb of your non-dominant hand. Each time, paint where you reach <strong style="--c: var(--green)">comfortably</strong>, then where you can <strong style="--c: var(--yellow)">stretch</strong>. Anything left unpainted counts as out of reach.</p>
   <button id="startBtn">Start</button>
   <p class="tip" id="installTip" hidden></p>
@@ -332,7 +332,7 @@
     2: {
       title: 'Pass 2 · Non-dominant hand',
       grip: 'Now hold your phone in one hand only: your non-dominant one (your left hand if you\'re right-handed).',
-      green: 'Paint the areas you can reach <strong>comfortably</strong> without shifting your grip. Use only your thumb',
+      green: 'Paint the areas you can reach <strong>comfortably</strong> without shifting your grip. Use only your thumb.',
       yellow: 'Without moving your hand or grip, <strong>stretch</strong> your thumb as far as it can go. Paint everywhere it can still touch, even if it\'s a stretch.',
       maxTouches: 1,
     },
@@ -632,7 +632,7 @@
     c.textBaseline = 'middle';
     c.fillStyle = '#fff';
     // Shrink the caption to fit the image width rather than let a long title run off the edge.
-    const caption = `Thumb Reach · ${PASSES[pass].title}`;
+    const caption = `Finger Reach · ${PASSES[pass].title}`;
     c.font = `600 ${15 * s}px ${font}`;
     const fit = Math.min(1, (out.width - pad * 2) / c.measureText(caption).width);
     c.font = `600 ${15 * s * fit}px ${font}`;
@@ -657,7 +657,7 @@
     const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    shareFile = new File([bytes], `thumb-reach-pass-${pass}.png`, { type: 'image/png' });
+    shareFile = new File([bytes], `finger-reach-pass-${pass}.png`, { type: 'image/png' });
     if (shareUrl) URL.revokeObjectURL(shareUrl);
     shareUrl = URL.createObjectURL(shareFile);
   }
@@ -667,7 +667,7 @@
   }
 
   function openShareSheet(file) {
-    const data = { files: [file], title: 'My thumb reach' };
+    const data = { files: [file], title: 'My finger reach' };
     let canShareFiles = false;
     try { canShareFiles = !!(navigator.canShare && navigator.canShare(data)); } catch (_) { /* unsupported */ }
     if (!canShareFiles) { openShareView(); return; }

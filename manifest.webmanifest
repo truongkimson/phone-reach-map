@@ -1,6 +1,6 @@
 {
-  "name": "Thumb Reach Test",
-  "short_name": "Thumb Reach",
+  "name": "Finger Reach Test",
+  "short_name": "Finger Reach",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
