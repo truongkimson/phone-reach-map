@@ -183,7 +183,6 @@
   .actions { display: flex; gap: 8px; }
   .actions button { flex: 1; min-height: 40px; padding: 0 10px; font-size: 15px; }
   button.ghost, .linkbtn.ghost { background: rgba(0, 0, 0, .3); color: #fff; }
-  button:disabled { opacity: .5; }
   .linkbtn {
     display: inline-flex;
     align-items: center;
@@ -604,61 +603,66 @@
   }
 
   // ---------- Share ----------
-  // The image is built as soon as results appear, so the Share tap can open the share sheet
-  // synchronously (Safari refuses navigator.share once the tap's user activation has been spent
-  // awaiting an image encode).
+  // The share image is built synchronously while the results are computed, before the results
+  // screen appears, so Share works the moment it's visible and opens the share sheet directly
+  // from the tap. (canvas.toBlob is avoided: Chrome schedules it into idle time, which on Android
+  // could leave the image seconds away; toDataURL encodes on the spot.)
 
+  const SHARE_MAX_W = 1080;    // plenty for Photos and messaging apps; fewer pixels to encode on 3x screens
   let shareFile = null;
   let shareUrl = '';
 
   function prepareShareImage(map, pcts) {
     shareFile = null;
-    $('shareBtn').disabled = true;
-    const s = map.width / W;             // device pixels per CSS px
+    const k = Math.min(1, SHARE_MAX_W / map.width);
+    const mapW = Math.round(map.width * k), mapH = Math.round(map.height * k);
+    const s = mapW / W;                  // image pixels per CSS px
     const band = Math.round(96 * s);     // caption strip under the map
     const out = document.createElement('canvas');
-    out.width = map.width;
-    out.height = map.height + band;
+    out.width = mapW;
+    out.height = mapH + band;
     const c = out.getContext('2d');
-    c.drawImage(map, 0, 0);
+    c.drawImage(map, 0, 0, mapW, mapH);
     c.fillStyle = '#141414';
-    c.fillRect(0, map.height, out.width, band);
+    c.fillRect(0, mapH, out.width, band);
 
     const pad = 16 * s;
     const font = '-apple-system, BlinkMacSystemFont, Roboto, "Segoe UI", sans-serif';
     c.textBaseline = 'middle';
     c.fillStyle = '#fff';
     c.font = `600 ${15 * s}px ${font}`;
-    c.fillText(`Thumb Reach · ${PASSES[pass].title}`, pad, map.height + 28 * s);
+    c.fillText(`Thumb Reach · ${PASSES[pass].title}`, pad, mapH + 28 * s);
 
     const items = [['green', 'Comfortable'], ['yellow', 'Stretch'], ['red', 'Out of reach']];
     const colW = (out.width - pad * 2) / items.length;
-    const y = map.height + 64 * s;
-    items.forEach(([k, label], i) => {
+    const y = mapH + 64 * s;
+    items.forEach(([key, label], i) => {
       const x = pad + colW * i;
-      c.fillStyle = COLORS[k];
+      c.fillStyle = COLORS[key];
       c.fillRect(x, y - 6 * s, 12 * s, 12 * s);
       c.fillStyle = '#fff';
       c.font = `700 ${17 * s}px ${font}`;
-      c.fillText(pcts[k].toFixed(1) + '%', x + 18 * s, y - 8 * s);
+      c.fillText(pcts[key].toFixed(1) + '%', x + 18 * s, y - 8 * s);
       c.fillStyle = 'rgba(255,255,255,.7)';
       c.font = `500 ${12 * s}px ${font}`;
       c.fillText(label, x + 18 * s, y + 11 * s);
     });
 
-    const forPass = pass;
-    out.toBlob((blob) => {
-      if (!blob || forPass !== pass || state !== 'results') return;
-      shareFile = new File([blob], `thumb-reach-pass-${forPass}.png`, { type: 'image/png' });
-      if (shareUrl) URL.revokeObjectURL(shareUrl);
-      shareUrl = URL.createObjectURL(blob);
-      $('shareBtn').disabled = false;
-    }, 'image/png');
+    const dataUrl = out.toDataURL('image/png');
+    const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    shareFile = new File([bytes], `thumb-reach-pass-${pass}.png`, { type: 'image/png' });
+    if (shareUrl) URL.revokeObjectURL(shareUrl);
+    shareUrl = URL.createObjectURL(shareFile);
   }
 
   function shareResult() {
-    if (!shareFile) return;
-    const data = { files: [shareFile], title: 'My thumb reach' };
+    if (shareFile) openShareSheet(shareFile);
+  }
+
+  function openShareSheet(file) {
+    const data = { files: [file], title: 'My thumb reach' };
     let canShareFiles = false;
     try { canShareFiles = !!(navigator.canShare && navigator.canShare(data)); } catch (_) { /* unsupported */ }
     if (!canShareFiles) { openShareView(); return; }
