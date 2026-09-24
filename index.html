@@ -93,6 +93,7 @@
   .tip { font-size: 14px !important; opacity: .75; }
   .grip { font-weight: 600; }
   .tip b { font-weight: 600; }
+  .share-icon { display: inline-block; width: .8em; height: 1em; margin: 0 .1em; vertical-align: -.15em; opacity: 1; }
   .tip a { color: inherit; font-weight: 600; text-underline-offset: 2px; -webkit-user-select: text; user-select: text; }
 
   button {
@@ -779,6 +780,26 @@
 
   const HOME_URL = 'https://truongkimson.github.io/phone-reach-map/';
 
+  // The iOS Share glyph (square with an up arrow), drawn inline so people recognize the button
+  // wherever their browser puts it.
+  const SHARE_ICON = '<svg class="share-icon" viewBox="0 0 16 20" aria-label="Share" role="img">' +
+    '<path d="M5 7H2.5v11.5h11V7H11M8 1.5v10M4.8 4.6 8 1.4l3.2 3.2" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  // Where Share lives differs by browser and iOS version, and the page can't see the toolbar, so
+  // the tip names the usual spot and shows the icon itself.
+  function iosShareSteps(ua) {
+    const add = '<b>Add to Home Screen</b>';
+    if (/CriOS/.test(ua)) return `tap ${SHARE_ICON} in the address bar, then ${add}`;          // Chrome
+    if (/FxiOS|EdgiOS|OPiOS/.test(ua)) return `tap ${SHARE_ICON} in the browser menu, then ${add}`;
+    const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (ipad) return `tap ${SHARE_ICON} at the top right, then ${add}`;
+    // Safari's "Version/NN" tracks iOS (the "OS 18_x" part of the UA is frozen from iOS 26 on).
+    const v = parseInt((ua.match(/Version\/(\d+)/) || [])[1], 10);
+    if (v >= 26) return `tap <b>⋯</b> at the bottom right, then ${SHARE_ICON} <b>Share</b>, then ${add}`;
+    return `tap ${SHARE_ICON} at the bottom of the screen, then ${add}`;
+  }
+
   function showInstallTip() {
     const ua = navigator.userAgent;
     const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -792,7 +813,7 @@
       const link = `<a href="${HOME_URL}" target="_blank" rel="noopener">${HOME_URL.replace(/^https:\/\/|\/$/g, '')}</a>`;
       html = `For full screen, open ${link} in ${ios ? 'Safari' : 'Chrome'} and add it to your Home Screen.`;
     } else if (embedded) return;
-    else if (ios) html = 'For full screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon.';
+    else if (ios) html = `For full screen: ${iosShareSteps(ua)}, then open it from the new icon.`;
     else if (android) html = 'For full screen: open the <b>⋮</b> menu → <b>Add to Home screen</b>, then open it from the icon.';
     if (!html) return;
     $('installTip').innerHTML = html;
