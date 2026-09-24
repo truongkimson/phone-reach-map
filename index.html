@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-title" content="Thumb Reach">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Thumb Reach Test</title>
+<style>
+  :root {
+    --green: #2ecc71;
+    --yellow: #f1c40f;
+    --red: #e74c3c;
+    /* Full app height, set from JS. Launched from the iOS Home Screen with the see-through status bar,
+       iOS reports a viewport shorter than the screen by the status bar's height (20–62pt depending on
+       the model), so anything sized to 100% / inset:0 stops short and leaves a strip at the bottom.
+       JS sets the device's real screen height instead; see viewportSize(). */
+    --app-h: 100%;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: var(--app-h);
+    overflow: hidden;
+    touch-action: manipulation; /* no double-tap zoom; the canvases themselves use none */
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    background: var(--red);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, Roboto, "Segoe UI", sans-serif;
+  }
+  body { position: fixed; top: 0; left: 0; right: 0; }
+
+  canvas {
+    position: fixed;
+    left: 0;
+    top: 0;
+    display: block;
+    touch-action: none;
+  }
+  #phaseLayer { z-index: 1; }
+  #lockedLayer { z-index: 2; } /* committed colors sit on top so later phases can't cover them */
+
+  .overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-h);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    box-sizing: border-box;
+    padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  .overlay::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-h);
+    z-index: -1;
+    background: rgba(0, 0, 0, .85);
+  }
+  .overlay[hidden], .banner[hidden], .notice[hidden], .tip[hidden] { display: none; }
+  .overlay h1 { margin: 0; font-size: 28px; font-weight: 700; }
+  .overlay p { margin: 0; max-width: 34ch; font-size: 18px; line-height: 1.45; }
+  .overlay p strong { color: var(--c, #fff); }
+  .step { font-size: 14px !important; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+  .notice {
+    font-size: 15px !important;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: rgba(241, 196, 15, .18);
+    color: var(--yellow);
+  }
+
+  .tip { font-size: 14px !important; opacity: .75; }
+  .tip b { font-weight: 600; }
+
+  button {
+    min-height: 48px;
+    padding: 0 28px;
+    border: 0;
+    border-radius: 12px;
+    background: #fff;
+    color: #111;
+    font: 600 18px/1 inherit;
+    font-family: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(.97); }
+
+  .banner {
+    position: fixed;
+    z-index: 5;
+    top: calc(8px + env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 6px 6px 14px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, .18);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .6); /* keeps the label readable over any paint color */
+    pointer-events: none; /* only the button captures taps; you can paint under the label */
+  }
+  .banner span { font-size: 15px; font-weight: 600; }
+  .banner i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
+    border-radius: 50%;
+    vertical-align: -1px;
+    background: var(--c);
+    box-shadow: 0 0 0 1.5px #fff;
+  }
+  .banner button { pointer-events: auto; min-height: 48px; padding: 0 18px; font-size: 16px; }
+  /* Out of the way while a finger is painting; back as soon as it lifts */
+  .banner { transition: opacity .15s ease-out; }
+  body.drawing .banner { opacity: 0; transition-duration: .08s; }
+  body.drawing .banner button { pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .banner { transition: none; } }
+
+  /* Results: a small see-through panel pinned top-center; no scrim over the canvas */
+  .panel, .pill {
+    position: fixed;
+    z-index: 10;
+    top: calc(8px + env(safe-area-inset-top));
+    left: 0;
+    right: 0;
+    margin-inline: auto; /* centers without transform, so button:active scaling doesn't shift it */
+    box-sizing: border-box;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, .15);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .6); /* keeps white text readable over yellow/green */
+  }
+  .panel[hidden], .pill[hidden] { display: none; }
+  .panel {
+    width: 200px;
+    max-width: calc(100vw - 16px);
+    padding: 6px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .list { margin: 0; padding: 0; list-style: none; text-align: left; }
+  .list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    font-size: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, .25);
+  }
+  .list li:last-child { border-bottom: 0; }
+  .list i, .pill i { width: 12px; height: 12px; border-radius: 3px; background: var(--c); flex: none; box-shadow: 0 0 0 1.5px #fff; }
+  .list b, .pill b { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: 8px; }
+  .actions button { flex: 1; min-height: 40px; padding: 0 10px; font-size: 15px; }
+  button.ghost { background: rgba(0, 0, 0, .3); color: #fff; }
+  .pill {
+    width: fit-content;
+    min-height: 40px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .pill span { display: flex; align-items: center; gap: 5px; }
+  .pill b { margin-left: 0; }
+
+</style>
+</head>
+<body>
+
+<canvas id="phaseLayer"></canvas>
+<canvas id="lockedLayer"></canvas>
+
+<!-- State 0: Welcome -->
+<section class="overlay" id="welcome">
+  <h1>Thumb Reach Test</h1>
+  <p>Hold your phone the way you normally would, one-handed. You'll paint two zones with your thumb: where it reaches <strong style="--c: var(--green)">comfortably</strong>, then where it can <strong style="--c: var(--yellow)">stretch</strong>. Anything left unpainted counts as out of reach.</p>
+  <button id="startBtn">Start</button>
+  <p class="tip" id="installTip" hidden></p>
+</section>
+
+<!-- State 1: Comfortable instructions -->
+<section class="overlay" id="instrGreen" hidden>
+  <p class="step">Step 1 of 2</p>
+  <p class="notice" id="orientNotice" hidden>Screen orientation changed, so the test was restarted.</p>
+  <p style="--c: var(--green)">Paint the areas your thumb can reach <strong>comfortably</strong>, without stretching or moving your grip.</p>
+  <button id="beginGreenBtn">Begin Painting</button>
+</section>
+
+<!-- State 3: Stretch instructions -->
+<section class="overlay" id="instrYellow" hidden>
+  <p class="step">Step 2 of 2</p>
+  <p style="--c: var(--yellow)">Without moving your hand or grip, <strong>stretch</strong> your thumb as far as it can go. Paint everywhere it can still touch, even if it's a stretch.</p>
+  <button id="beginYellowBtn">Begin Painting</button>
+</section>
+
+<!-- States 2 & 4: Painting banners -->
+<div class="banner" id="bannerGreen" hidden>
+  <span><i style="--c: var(--green)"></i>Painting: Comfortable zone</span>
+  <button id="nextBtn">Next →</button>
+</div>
+<div class="banner" id="bannerYellow" hidden>
+  <span><i style="--c: var(--yellow)"></i>Painting: Stretch zone</span>
+  <button id="finishBtn">Finish →</button>
+</div>
+
+<!-- State 5: Results (compact panel, canvas stays fully visible) -->
+<section class="panel" id="results" hidden>
+  <ul class="list">
+    <li><i style="--c: var(--green)"></i>Comfortable<b id="pctGreen">0.0%</b></li>
+    <li><i style="--c: var(--yellow)"></i>Stretch<b id="pctYellow">0.0%</b></li>
+    <li><i style="--c: var(--red)"></i>Out of reach<b id="pctRed">0.0%</b></li>
+  </ul>
+  <div class="actions">
+    <button id="hideBtn" class="ghost">Hide</button>
+    <button id="restartBtn">Restart</button>
+  </div>
+</section>
+<button class="pill" id="showBtn" hidden aria-label="Show results">
+  <span><i style="--c: var(--green)"></i><b id="miniGreen"></b></span>
+  <span><i style="--c: var(--yellow)"></i><b id="miniYellow"></b></span>
+  <span><i style="--c: var(--red)"></i><b id="miniRed"></b></span>
+</button>
+
+<script>
+(() => {
+  'use strict';
+
+  const COLORS = { green: '#2ecc71', yellow: '#f1c40f', red: '#e74c3c' };
+  const RGB = [
+    ['green', 46, 204, 113],
+    ['yellow', 241, 196, 15],
+    ['red', 231, 76, 60],
+  ];
+  const BRUSH_RADIUS = 35; // CSS px; the context transform scales it by devicePixelRatio
+
+  const $ = (id) => document.getElementById(id);
+  const phaseCv = $('phaseLayer');
+  const lockedCv = $('lockedLayer');
+  const pctx = phaseCv.getContext('2d');
+  const lctx = lockedCv.getContext('2d');
+
+  const screens = ['welcome', 'instrGreen', 'instrYellow', 'bannerGreen', 'bannerYellow', 'results', 'showBtn'];
+
+  let W = 0, H = 0, DPR = 1;
+  let state = 'welcome';   // welcome | instrGreen | paintGreen | instrYellow | paintYellow | results
+  let phase = null;        // 'green' | 'yellow' while painting
+  let activeTouch = null;  // identifier of the touch currently painting
+  let mouseDown = false;
+  let lastPt = null;       // last drawn point of the current stroke (null = stroke just started)
+  let pending = [];        // points waiting for the next animation frame
+  let rafId = 0;
+
+  // ---------- Canvas sizing ----------
+
+  function applyTransform(ctx) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = BRUSH_RADIUS * 2;
+  }
+
+  function sizeCanvas(cv, ctx, preserve) {
+    let copy = null;
+    if (preserve && cv.width && cv.height) {
+      copy = document.createElement('canvas');
+      copy.width = cv.width;
+      copy.height = cv.height;
+      copy.getContext('2d').drawImage(cv, 0, 0);
+    }
+    cv.width = Math.round(W * DPR);
+    cv.height = Math.round(H * DPR);
+    cv.style.width = W + 'px';
+    cv.style.height = H + 'px';
+    if (copy) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(copy, 0, 0, cv.width, cv.height); // stretch old content to new size
+    }
+    applyTransform(ctx);
+  }
+
+  // Launched from the iOS Home Screen with a see-through status bar, innerHeight can come up short
+  // of the real screen, leaving an unpaintable strip at the bottom. There the page owns the whole
+  // screen, so size to the screen itself. (iOS reports screen size in portrait regardless of rotation.)
+  const iosStandalone = navigator.standalone === true;
+
+  function viewportSize() {
+    let w = window.innerWidth, h = window.innerHeight;
+    if (iosStandalone && screen.width && screen.height) {
+      const short = Math.min(screen.width, screen.height), long = Math.max(screen.width, screen.height);
+      const portrait = w <= h;
+      // Only when the app spans the whole screen width; an iPad Split View / Slide Over window doesn't.
+      if (w === (portrait ? short : long)) h = Math.max(h, portrait ? long : short);
+    }
+    return { w, h };
+  }
+
+  function resizeAll(preserve) {
+    ({ w: W, h: H } = viewportSize());
+    document.documentElement.style.setProperty('--app-h', H + 'px');
+    DPR = Math.min(window.devicePixelRatio || 1, 3);
+    sizeCanvas(phaseCv, pctx, preserve);
+    sizeCanvas(lockedCv, lctx, preserve);
+  }
+
+  function clearLayer(cv, ctx) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    applyTransform(ctx);
+  }
+
+  // ---------- UI state ----------
+
+  function show(...ids) {
+    for (const id of screens) $(id).hidden = !ids.includes(id);
+  }
+
+  function setState(next) {
+    endStroke();
+    state = next;
+    phase = next === 'paintGreen' ? 'green' : next === 'paintYellow' ? 'yellow' : null;
+    switch (next) {
+      case 'welcome':     show('welcome'); break;
+      case 'instrGreen':  show('instrGreen'); break;
+      case 'paintGreen':  show('bannerGreen'); break;
+      case 'instrYellow': show('instrYellow'); break;
+      case 'paintYellow': show('bannerYellow'); break;
+      case 'results':     computeResults(); show('results'); break;
+    }
+  }
+
+  // Move current phase strokes into the locked layer, *underneath* anything already locked,
+  // so earlier phases always win.
+  function commitPhase() {
+    flush();
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.globalCompositeOperation = 'destination-over';
+    lctx.drawImage(phaseCv, 0, 0);
+    lctx.globalCompositeOperation = 'source-over';
+    applyTransform(lctx);
+    clearLayer(phaseCv, pctx);
+  }
+
+  function resetAll() {
+    clearLayer(phaseCv, pctx);
+    clearLayer(lockedCv, lctx);
+  }
+
+  // ---------- Painting ----------
+
+  function beginStroke(x, y) {
+    if (!phase) return;
+    document.body.classList.add('drawing');
+    lastPt = null;
+    pending = [[x, y]];
+    schedule();
+  }
+
+  function moveStroke(x, y) {
+    if (!phase) return;
+    pending.push([x, y]);
+    schedule();
+  }
+
+  function endStroke() {
+    flush();
+    document.body.classList.remove('drawing');
+    lastPt = null;
+    activeTouch = null;
+    mouseDown = false;
+  }
+
+  function schedule() {
+    if (!rafId) rafId = requestAnimationFrame(flush);
+  }
+
+  function flush() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    if (!pending.length || !phase) { pending = []; return; }
+    const color = COLORS[phase];
+    const pts = pending;
+    pending = [];
+
+    if (!lastPt) {
+      // Fill a dot so a plain tap paints something (zero-length strokes aren't reliable in Safari).
+      const [x, y] = pts[0];
+      pctx.fillStyle = color;
+      pctx.beginPath();
+      pctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
+      pctx.fill();
+      lastPt = pts[0];
+    }
+
+    pctx.strokeStyle = color;
+    pctx.beginPath();
+    pctx.moveTo(lastPt[0], lastPt[1]);
+    for (const [x, y] of pts) pctx.lineTo(x, y);
+    pctx.stroke();
+    lastPt = pts[pts.length - 1];
+  }
+
+  // Touch
+  lockedCv.addEventListener('touchstart', (e) => {
+    if (!phase) return; // not painting: leave the touch alone so taps still become clicks
+    e.preventDefault();
+    if (activeTouch !== null) return;
+    const t = e.changedTouches[0];
+    activeTouch = t.identifier;
+    beginStroke(t.clientX, t.clientY);
+  }, { passive: false });
+
+  lockedCv.addEventListener('touchmove', (e) => {
+    if (activeTouch === null) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouch) moveStroke(t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  const touchEnd = (e) => {
+    if (activeTouch === null) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouch) endStroke();
+    }
+  };
+  lockedCv.addEventListener('touchend', touchEnd, { passive: false });
+  lockedCv.addEventListener('touchcancel', touchEnd, { passive: false });
+
+  // Mouse (desktop testing)
+  lockedCv.addEventListener('mousedown', (e) => {
+    if (!phase || e.button !== 0) return;
+    e.preventDefault();
+    mouseDown = true;
+    beginStroke(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (mouseDown) moveStroke(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', () => {
+    if (mouseDown) endStroke();
+  });
+
+  // Block browser gestures (scroll, pull-to-refresh, pinch/double-tap zoom, long-press menu)
+  document.addEventListener('touchmove', (e) => {
+    if (!(e.target instanceof Element && e.target.closest('button'))) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // ---------- Results ----------
+
+  function computeResults() {
+    const w = lockedCv.width, h = lockedCv.height;
+    const flat = document.createElement('canvas');
+    flat.width = w;
+    flat.height = h;
+    const fctx = flat.getContext('2d', { willReadFrequently: true });
+    fctx.fillStyle = COLORS.red;
+    fctx.fillRect(0, 0, w, h);
+    fctx.drawImage(lockedCv, 0, 0);
+
+    const data = fctx.getImageData(0, 0, w, h).data;
+    const counts = { green: 0, yellow: 0, red: 0 };
+
+    // Nearest-color classification also handles anti-aliased stroke edges.
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      let best = 'red', bestD = Infinity;
+      for (const [name, cr, cg, cb] of RGB) {
+        const d = (r - cr) * (r - cr) + (g - cg) * (g - cg) + (b - cb) * (b - cb);
+        if (d < bestD) { bestD = d; best = name; }
+      }
+      counts[best]++;
+    }
+
+    const total = w * h;
+    const keys = ['green', 'yellow', 'red'];
+    // Work in tenths of a percent so the displayed values sum to exactly 100.0
+    const tenths = keys.map((k) => Math.round((counts[k] / total) * 1000));
+    const diff = 1000 - tenths.reduce((a, b) => a + b, 0);
+    let largest = 0;
+    for (let i = 1; i < 3; i++) if (tenths[i] > tenths[largest]) largest = i;
+    tenths[largest] += diff;
+
+    const ids = { green: ['pctGreen', 'miniGreen'], yellow: ['pctYellow', 'miniYellow'], red: ['pctRed', 'miniRed'] };
+    keys.forEach((k, i) => {
+      const pct = tenths[i] / 10;
+      $(ids[k][0]).textContent = pct.toFixed(1) + '%';
+      $(ids[k][1]).textContent = Math.round(pct) + '%';
+    });
+  }
+
+  // ---------- Buttons ----------
+
+  // Go fullscreen where the browser allows it (Android Chrome, desktop); iPhone Safari and
+  // embedded views refuse, so failures are ignored and the test runs in the visible area.
+  function requestFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try {
+      const p = req.call(el);
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) { /* not allowed here */ }
+  }
+
+  // Buttons act as soon as the finger lifts, not on iOS's synthesized click, which it drops if the
+  // finger drifts a little or taps come in quick succession. A press counts only if the finger went
+  // down on that same button. After a finger press, the click iOS sends for it is ignored, since by
+  // then the next screen may have put a different button under the finger. click still serves keyboards.
+  let pressedEl = null;
+  let lastPointerFire = 0;
+  function onTap(id, fn) {
+    const el = $(id);
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pressedEl = el;
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (pressedEl !== el) return;
+      pressedEl = null;
+      lastPointerFire = Date.now();
+      fn();
+    });
+    el.addEventListener('click', () => {
+      if (Date.now() - lastPointerFire < 800) return;
+      fn();
+    });
+  }
+
+  onTap('startBtn', () => {
+    requestFullscreen();
+    $('orientNotice').hidden = true;
+    setState('instrGreen');
+  });
+  onTap('beginGreenBtn', () => setState('paintGreen'));
+  onTap('nextBtn', () => { commitPhase(); setState('instrYellow'); });
+  onTap('beginYellowBtn', () => setState('paintYellow'));
+  onTap('finishBtn', () => { commitPhase(); setState('results'); });
+  onTap('restartBtn', () => { resetAll(); setState('welcome'); });
+  onTap('hideBtn', () => show('showBtn'));
+  onTap('showBtn', () => show('results'));
+
+  // ---------- Resize / orientation ----------
+  // Small resizes (e.g. browser bars showing/hiding) stretch the existing paint to fit.
+  // An orientation flip makes the map meaningless, so we re-fill red and restart at Step 1.
+
+  let resizeTimer = 0;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const { w, h } = viewportSize();
+      if (w === W && h === H && (window.devicePixelRatio || 1) === DPR) return;
+      const flipped = (w > h) !== (W > H);
+      endStroke();
+      if (flipped && state !== 'welcome' && state !== 'results') {
+        resizeAll(false);
+        setState('instrGreen');
+        $('orientNotice').hidden = false;
+      } else {
+        resizeAll(state !== 'welcome');
+      }
+    }, 150);
+  }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  // ---------- Home Screen tip ----------
+  // Browsers only give a web page the whole screen when it's launched from a Home Screen icon.
+  // Not shown when already launched that way, or inside an embedding frame (can't be installed from there).
+
+  function showInstallTip() {
+    const ua = navigator.userAgent;
+    const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    let embedded = true;
+    try { embedded = window.self !== window.top; } catch (_) { /* cross-origin parent */ }
+    if (standalone || embedded) return;
+    const ios = /iPhone|iPod/.test(ua) || /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const android = /Android/.test(ua);
+    let html = '';
+    if (ios) html = 'For full screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon.';
+    else if (android) html = 'For full screen: open the <b>⋮</b> menu → <b>Add to Home screen</b>, then open it from the icon.';
+    if (!html) return;
+    $('installTip').innerHTML = html;
+    $('installTip').hidden = false;
+  }
+
+  // ---------- Init ----------
+  resizeAll(false);
+  setState('welcome');
+  showInstallTip();
+})();
+</script>
+</body>
+</html>
