@@ -91,6 +91,7 @@
   }
 
   .tip { font-size: 14px !important; opacity: .75; }
+  .grip { font-weight: 600; }
   .tip b { font-weight: 600; }
   .tip a { color: inherit; font-weight: 600; text-underline-offset: 2px; -webkit-user-select: text; user-select: text; }
 
@@ -158,13 +159,15 @@
   }
   .panel[hidden], .pill[hidden] { display: none; }
   .panel {
-    width: 200px;
+    width: 220px;
     max-width: calc(100vw - 16px);
     padding: 6px 12px 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
+  .panel-title { margin: 0; padding-top: 6px; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+  .panel > button { min-height: 40px; padding: 0 10px; font-size: 15px; }
   .list { margin: 0; padding: 0; list-style: none; text-align: left; }
   .list li {
     display: flex;
@@ -179,7 +182,33 @@
   .list b, .pill b { margin-left: auto; font-variant-numeric: tabular-nums; }
   .actions { display: flex; gap: 8px; }
   .actions button { flex: 1; min-height: 40px; padding: 0 10px; font-size: 15px; }
-  button.ghost { background: rgba(0, 0, 0, .3); color: #fff; }
+  button.ghost, .linkbtn.ghost { background: rgba(0, 0, 0, .3); color: #fff; }
+  button:disabled { opacity: .5; }
+  .linkbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 18px;
+    border-radius: 12px;
+    font: 600 15px/1 inherit;
+    font-family: inherit;
+    color: inherit;
+    text-decoration: none;
+  }
+  .linkbtn[hidden] { display: none; }
+  #shareView .actions { width: 100%; max-width: 280px; }
+  #shareView .actions > * { flex: 1; min-height: 44px; font-size: 16px; }
+  #shareImg {
+    display: block;
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .25);
+    -webkit-touch-callout: default; /* press-and-hold → Save to Photos */
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
   .pill {
     width: fit-content;
     min-height: 40px;
@@ -203,23 +232,24 @@
 <!-- State 0: Welcome -->
 <section class="overlay" id="welcome">
   <h1>Thumb Reach Test</h1>
-  <p>Hold your phone the way you normally would, one-handed. You'll paint two zones with your thumb: where it reaches <strong style="--c: var(--green)">comfortably</strong>, then where it can <strong style="--c: var(--yellow)">stretch</strong>. Anything left unpainted counts as out of reach.</p>
+  <p>You'll map your reach twice: first holding your phone however you like, then one-handed with the thumb of your non-dominant hand. Each time, paint where you reach <strong style="--c: var(--green)">comfortably</strong>, then where you can <strong style="--c: var(--yellow)">stretch</strong>. Anything left unpainted counts as out of reach.</p>
   <button id="startBtn">Start</button>
   <p class="tip" id="installTip" hidden></p>
 </section>
 
-<!-- State 1: Comfortable instructions -->
+<!-- State 1: Comfortable instructions (text filled per pass) -->
 <section class="overlay" id="instrGreen" hidden>
-  <p class="step">Step 1 of 2</p>
-  <p class="notice" id="orientNotice" hidden>Screen orientation changed, so the test was restarted.</p>
-  <p style="--c: var(--green)">Paint the areas your thumb can reach <strong>comfortably</strong>, without stretching or moving your grip.</p>
+  <p class="step" id="stepGreen"></p>
+  <p class="notice" id="orientNotice" hidden>Screen orientation changed, so this pass was restarted.</p>
+  <p class="grip" id="gripGreen"></p>
+  <p style="--c: var(--green)" id="textGreen"></p>
   <button id="beginGreenBtn">Begin Painting</button>
 </section>
 
-<!-- State 3: Stretch instructions -->
+<!-- State 3: Stretch instructions (text filled per pass) -->
 <section class="overlay" id="instrYellow" hidden>
-  <p class="step">Step 2 of 2</p>
-  <p style="--c: var(--yellow)">Without moving your hand or grip, <strong>stretch</strong> your thumb as far as it can go. Paint everywhere it can still touch, even if it's a stretch.</p>
+  <p class="step" id="stepYellow"></p>
+  <p style="--c: var(--yellow)" id="textYellow"></p>
   <button id="beginYellowBtn">Begin Painting</button>
 </section>
 
@@ -235,6 +265,7 @@
 
 <!-- State 5: Results (compact panel, canvas stays fully visible) -->
 <section class="panel" id="results" hidden>
+  <p class="panel-title" id="resultsTitle"></p>
   <ul class="list">
     <li><i style="--c: var(--green)"></i>Comfortable<b id="pctGreen">0.0%</b></li>
     <li><i style="--c: var(--yellow)"></i>Stretch<b id="pctYellow">0.0%</b></li>
@@ -242,14 +273,25 @@
   </ul>
   <div class="actions">
     <button id="hideBtn" class="ghost">Hide</button>
-    <button id="restartBtn">Restart</button>
+    <button id="shareBtn" class="ghost">Share</button>
   </div>
+  <button id="resultsNextBtn"></button>
 </section>
 <button class="pill" id="showBtn" hidden aria-label="Show results">
   <span><i style="--c: var(--green)"></i><b id="miniGreen"></b></span>
   <span><i style="--c: var(--yellow)"></i><b id="miniYellow"></b></span>
   <span><i style="--c: var(--red)"></i><b id="miniRed"></b></span>
 </button>
+
+<!-- Share fallback: where the share sheet isn't available (e.g. inside claude.ai), show the image to save by hand -->
+<section class="overlay" id="shareView" hidden>
+  <img id="shareImg" alt="Your reach map with percentages">
+  <p class="tip" id="shareHint"></p>
+  <div class="actions">
+    <a class="linkbtn ghost" id="downloadLink" download hidden>Download</a>
+    <button id="closeShareBtn">Done</button>
+  </div>
+</section>
 
 <script>
 (() => {
@@ -269,16 +311,32 @@
   const pctx = phaseCv.getContext('2d');
   const lctx = lockedCv.getContext('2d');
 
-  const screens = ['welcome', 'instrGreen', 'instrYellow', 'bannerGreen', 'bannerYellow', 'results', 'showBtn'];
+  const screens = ['welcome', 'instrGreen', 'instrYellow', 'bannerGreen', 'bannerYellow', 'results', 'showBtn', 'shareView'];
 
   let W = 0, H = 0, DPR = 1;
   let state = 'welcome';   // welcome | instrGreen | paintGreen | instrYellow | paintYellow | results
+  let pass = 1;            // 1: any grip, any fingers · 2: non-dominant hand, thumb only
   let phase = null;        // 'green' | 'yellow' while painting
-  let activeTouch = null;  // identifier of the touch currently painting
-  let mouseDown = false;
-  let lastPt = null;       // last drawn point of the current stroke (null = stroke just started)
-  let pending = [];        // points waiting for the next animation frame
+  // Strokes in progress, keyed by touch identifier (or 'mouse'): { last: [x, y] | null, pending: [[x, y], ...] }
+  const strokes = new Map();
   let rafId = 0;
+
+  const PASSES = {
+    1: {
+      title: 'Pass 1 · Your usual grip',
+      grip: 'Hold your phone however is most comfortable: one hand or two, any fingers or thumbs.',
+      green: 'Paint the areas you can reach <strong>comfortably</strong> without shifting your grip. You can use several fingers at once.',
+      yellow: 'Keep the same grip. Now <strong>stretch</strong> as far as you can and paint everywhere you can still touch, even if it\'s a stretch.',
+      maxTouches: Infinity,
+    },
+    2: {
+      title: 'Pass 2 · Non-dominant thumb',
+      grip: 'Now hold your phone in one hand only: your non-dominant one (your left hand if you\'re right-handed).',
+      green: 'Using <strong>only that thumb</strong>, paint the areas it reaches <strong>comfortably</strong> without shifting your grip.',
+      yellow: 'Without moving your hand or grip, <strong>stretch</strong> your thumb as far as it can go. Paint everywhere it can still touch, even if it\'s a stretch.',
+      maxTouches: 1,
+    },
+  };
 
   // ---------- Canvas sizing ----------
 
@@ -345,16 +403,31 @@
   }
 
   function setState(next) {
-    endStroke();
+    endAllStrokes();
     state = next;
     phase = next === 'paintGreen' ? 'green' : next === 'paintYellow' ? 'yellow' : null;
+    const P = PASSES[pass];
     switch (next) {
       case 'welcome':     show('welcome'); break;
-      case 'instrGreen':  show('instrGreen'); break;
+      case 'instrGreen':
+        $('stepGreen').textContent = `Pass ${pass} of 2 · Step 1 of 2`;
+        $('gripGreen').textContent = P.grip;
+        $('textGreen').innerHTML = P.green;
+        show('instrGreen');
+        break;
       case 'paintGreen':  show('bannerGreen'); break;
-      case 'instrYellow': show('instrYellow'); break;
+      case 'instrYellow':
+        $('stepYellow').textContent = `Pass ${pass} of 2 · Step 2 of 2`;
+        $('textYellow').innerHTML = P.yellow;
+        show('instrYellow');
+        break;
       case 'paintYellow': show('bannerYellow'); break;
-      case 'results':     computeResults(); show('results'); break;
+      case 'results':
+        $('resultsTitle').textContent = P.title;
+        $('resultsNextBtn').textContent = pass === 1 ? 'Continue to pass 2 →' : 'Start over';
+        computeResults();
+        show('results');
+        break;
     }
   }
 
@@ -377,26 +450,30 @@
 
   // ---------- Painting ----------
 
-  function beginStroke(x, y) {
+  function beginStroke(key, x, y) {
     if (!phase) return;
+    strokes.set(key, { last: null, pending: [[x, y]] });
     document.body.classList.add('drawing');
-    lastPt = null;
-    pending = [[x, y]];
     schedule();
   }
 
-  function moveStroke(x, y) {
-    if (!phase) return;
-    pending.push([x, y]);
+  function moveStroke(key, x, y) {
+    const st = strokes.get(key);
+    if (!st || !phase) return;
+    st.pending.push([x, y]);
     schedule();
   }
 
-  function endStroke() {
+  function endStroke(key) {
     flush();
+    strokes.delete(key);
+    if (!strokes.size) document.body.classList.remove('drawing');
+  }
+
+  function endAllStrokes() {
+    flush();
+    strokes.clear();
     document.body.classList.remove('drawing');
-    lastPt = null;
-    activeTouch = null;
-    mouseDown = false;
   }
 
   function schedule() {
@@ -405,69 +482,69 @@
 
   function flush() {
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-    if (!pending.length || !phase) { pending = []; return; }
+    if (!phase) { for (const st of strokes.values()) st.pending = []; return; }
     const color = COLORS[phase];
-    const pts = pending;
-    pending = [];
-
-    if (!lastPt) {
-      // Fill a dot so a plain tap paints something (zero-length strokes aren't reliable in Safari).
-      const [x, y] = pts[0];
-      pctx.fillStyle = color;
-      pctx.beginPath();
-      pctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
-      pctx.fill();
-      lastPt = pts[0];
-    }
-
+    pctx.fillStyle = color;
     pctx.strokeStyle = color;
-    pctx.beginPath();
-    pctx.moveTo(lastPt[0], lastPt[1]);
-    for (const [x, y] of pts) pctx.lineTo(x, y);
-    pctx.stroke();
-    lastPt = pts[pts.length - 1];
+    for (const st of strokes.values()) {
+      const pts = st.pending;
+      if (!pts.length) continue;
+      st.pending = [];
+      if (!st.last) {
+        // Fill a dot so a plain tap paints something (zero-length strokes aren't reliable in Safari).
+        const [x, y] = pts[0];
+        pctx.beginPath();
+        pctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
+        pctx.fill();
+        st.last = pts[0];
+      }
+      pctx.beginPath();
+      pctx.moveTo(st.last[0], st.last[1]);
+      for (const [x, y] of pts) pctx.lineTo(x, y);
+      pctx.stroke();
+      st.last = pts[pts.length - 1];
+    }
   }
 
-  // Touch
+  // Touch. Pass 1 paints with every finger on the screen; pass 2 takes one touch at a time
+  // (its thumb), ignoring any other contact such as the palm edge while it's down.
   lockedCv.addEventListener('touchstart', (e) => {
     if (!phase) return; // not painting: leave the touch alone so taps still become clicks
     e.preventDefault();
-    if (activeTouch !== null) return;
-    const t = e.changedTouches[0];
-    activeTouch = t.identifier;
-    beginStroke(t.clientX, t.clientY);
+    for (const t of e.changedTouches) {
+      if (strokes.size >= PASSES[pass].maxTouches) break;
+      beginStroke(t.identifier, t.clientX, t.clientY);
+    }
   }, { passive: false });
 
   lockedCv.addEventListener('touchmove', (e) => {
-    if (activeTouch === null) return;
+    if (!strokes.size) return;
     e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === activeTouch) moveStroke(t.clientX, t.clientY);
-    }
+    for (const t of e.changedTouches) moveStroke(t.identifier, t.clientX, t.clientY);
   }, { passive: false });
 
   const touchEnd = (e) => {
-    if (activeTouch === null) return;
+    if (!strokes.size) return;
     e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === activeTouch) endStroke();
-    }
+    for (const t of e.changedTouches) if (strokes.has(t.identifier)) endStroke(t.identifier);
   };
   lockedCv.addEventListener('touchend', touchEnd, { passive: false });
   lockedCv.addEventListener('touchcancel', touchEnd, { passive: false });
 
-  // Mouse (desktop testing)
+  // Mouse (desktop testing). After a tap, phones also send emulated mouse events; by then the
+  // button that was tapped may have closed its screen, so they'd land here and paint a stray dot.
+  let lastTouchAt = 0;
+  document.addEventListener('touchstart', () => { lastTouchAt = Date.now(); }, { capture: true, passive: true });
+  document.addEventListener('touchend', () => { lastTouchAt = Date.now(); }, { capture: true, passive: true });
   lockedCv.addEventListener('mousedown', (e) => {
     if (!phase || e.button !== 0) return;
+    if (Date.now() - lastTouchAt < 1000) return; // emulated mouse event from a touch
     e.preventDefault();
-    mouseDown = true;
-    beginStroke(e.clientX, e.clientY);
+    beginStroke('mouse', e.clientX, e.clientY);
   });
-  window.addEventListener('mousemove', (e) => {
-    if (mouseDown) moveStroke(e.clientX, e.clientY);
-  });
+  window.addEventListener('mousemove', (e) => moveStroke('mouse', e.clientX, e.clientY));
   window.addEventListener('mouseup', () => {
-    if (mouseDown) endStroke();
+    if (strokes.has('mouse')) endStroke('mouse');
   });
 
   // Block browser gestures (scroll, pull-to-refresh, pinch/double-tap zoom, long-press menu)
@@ -476,7 +553,9 @@
   }, { passive: false });
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('dblclick', (e) => e.preventDefault());
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target !== $('shareImg')) e.preventDefault(); // the share image keeps its Save menu
+  });
 
   // ---------- Results ----------
 
@@ -514,11 +593,96 @@
     tenths[largest] += diff;
 
     const ids = { green: ['pctGreen', 'miniGreen'], yellow: ['pctYellow', 'miniYellow'], red: ['pctRed', 'miniRed'] };
+    const pcts = {};
     keys.forEach((k, i) => {
       const pct = tenths[i] / 10;
+      pcts[k] = pct;
       $(ids[k][0]).textContent = pct.toFixed(1) + '%';
       $(ids[k][1]).textContent = Math.round(pct) + '%';
     });
+    prepareShareImage(flat, pcts);
+  }
+
+  // ---------- Share ----------
+  // The image is built as soon as results appear, so the Share tap can open the share sheet
+  // synchronously (Safari refuses navigator.share once the tap's user activation has been spent
+  // awaiting an image encode).
+
+  let shareFile = null;
+  let shareUrl = '';
+
+  function prepareShareImage(map, pcts) {
+    shareFile = null;
+    $('shareBtn').disabled = true;
+    const s = map.width / W;             // device pixels per CSS px
+    const band = Math.round(96 * s);     // caption strip under the map
+    const out = document.createElement('canvas');
+    out.width = map.width;
+    out.height = map.height + band;
+    const c = out.getContext('2d');
+    c.drawImage(map, 0, 0);
+    c.fillStyle = '#141414';
+    c.fillRect(0, map.height, out.width, band);
+
+    const pad = 16 * s;
+    const font = '-apple-system, BlinkMacSystemFont, Roboto, "Segoe UI", sans-serif';
+    c.textBaseline = 'middle';
+    c.fillStyle = '#fff';
+    c.font = `600 ${15 * s}px ${font}`;
+    c.fillText(`Thumb Reach · ${PASSES[pass].title}`, pad, map.height + 28 * s);
+
+    const items = [['green', 'Comfortable'], ['yellow', 'Stretch'], ['red', 'Out of reach']];
+    const colW = (out.width - pad * 2) / items.length;
+    const y = map.height + 64 * s;
+    items.forEach(([k, label], i) => {
+      const x = pad + colW * i;
+      c.fillStyle = COLORS[k];
+      c.fillRect(x, y - 6 * s, 12 * s, 12 * s);
+      c.fillStyle = '#fff';
+      c.font = `700 ${17 * s}px ${font}`;
+      c.fillText(pcts[k].toFixed(1) + '%', x + 18 * s, y - 8 * s);
+      c.fillStyle = 'rgba(255,255,255,.7)';
+      c.font = `500 ${12 * s}px ${font}`;
+      c.fillText(label, x + 18 * s, y + 11 * s);
+    });
+
+    const forPass = pass;
+    out.toBlob((blob) => {
+      if (!blob || forPass !== pass || state !== 'results') return;
+      shareFile = new File([blob], `thumb-reach-pass-${forPass}.png`, { type: 'image/png' });
+      if (shareUrl) URL.revokeObjectURL(shareUrl);
+      shareUrl = URL.createObjectURL(blob);
+      $('shareBtn').disabled = false;
+    }, 'image/png');
+  }
+
+  function shareResult() {
+    if (!shareFile) return;
+    const data = { files: [shareFile], title: 'My thumb reach' };
+    let canShareFiles = false;
+    try { canShareFiles = !!(navigator.canShare && navigator.canShare(data)); } catch (_) { /* unsupported */ }
+    if (!canShareFiles) { openShareView(); return; }
+    navigator.share(data).catch((err) => {
+      // AbortError = the user closed the share sheet; anything else (e.g. blocked inside a frame) → fallback
+      if (err && err.name !== 'AbortError') openShareView();
+    });
+  }
+
+  function openShareView() {
+    const ua = navigator.userAgent;
+    const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const touch = matchMedia('(pointer: coarse)').matches;
+    let embedded = true;
+    try { embedded = window.self !== window.top; } catch (_) { /* cross-origin parent */ }
+    $('shareImg').src = shareUrl;
+    $('shareHint').textContent = ios ? 'Press and hold the image, then tap Save to Photos.'
+      : touch ? 'Press and hold the image to save or share it.'
+      : 'Right-click the image to copy or save it.';
+    const dl = $('downloadLink');
+    dl.href = shareUrl;
+    dl.setAttribute('download', shareFile.name);
+    dl.hidden = ios || embedded; // iOS saves downloads to Files, not Photos; frames block downloads
+    show('shareView');
   }
 
   // ---------- Buttons ----------
@@ -562,13 +726,21 @@
   onTap('startBtn', () => {
     requestFullscreen();
     $('orientNotice').hidden = true;
+    pass = 1;
     setState('instrGreen');
   });
   onTap('beginGreenBtn', () => setState('paintGreen'));
   onTap('nextBtn', () => { commitPhase(); setState('instrYellow'); });
   onTap('beginYellowBtn', () => setState('paintYellow'));
   onTap('finishBtn', () => { commitPhase(); setState('results'); });
-  onTap('restartBtn', () => { resetAll(); setState('welcome'); });
+  onTap('resultsNextBtn', () => {
+    resetAll();
+    $('orientNotice').hidden = true;
+    if (pass === 1) { pass = 2; setState('instrGreen'); }
+    else { pass = 1; setState('welcome'); }
+  });
+  onTap('shareBtn', shareResult);
+  onTap('closeShareBtn', () => show('results'));
   onTap('hideBtn', () => show('showBtn'));
   onTap('showBtn', () => show('results'));
 
@@ -583,7 +755,7 @@
       const { w, h } = viewportSize();
       if (w === W && h === H && (window.devicePixelRatio || 1) === DPR) return;
       const flipped = (w > h) !== (W > H);
-      endStroke();
+      endAllStrokes();
       if (flipped && state !== 'welcome' && state !== 'results') {
         resizeAll(false);
         setState('instrGreen');
