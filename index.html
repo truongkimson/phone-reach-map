@@ -92,6 +92,7 @@
 
   .tip { font-size: 14px !important; opacity: .75; }
   .tip b { font-weight: 600; }
+  .tip a { color: inherit; font-weight: 600; text-underline-offset: 2px; -webkit-user-select: text; user-select: text; }
 
   button {
     min-height: 48px;
@@ -597,18 +598,25 @@
 
   // ---------- Home Screen tip ----------
   // Browsers only give a web page the whole screen when it's launched from a Home Screen icon.
-  // Not shown when already launched that way, or inside an embedding frame (can't be installed from there).
+  // Not shown when already launched that way. Inside an embedding frame (e.g. a claude.ai artifact),
+  // Add to Home Screen would save the host page, so point to the hosted copy instead.
+
+  const HOME_URL = 'https://truongkimson.github.io/phone-reach-map/';
 
   function showInstallTip() {
     const ua = navigator.userAgent;
     const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
     let embedded = true;
     try { embedded = window.self !== window.top; } catch (_) { /* cross-origin parent */ }
-    if (standalone || embedded) return;
+    if (standalone) return;
     const ios = /iPhone|iPod/.test(ua) || /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const android = /Android/.test(ua);
     let html = '';
-    if (ios) html = 'For full screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon.';
+    if (embedded && (ios || android)) {
+      const link = `<a href="${HOME_URL}" target="_blank" rel="noopener">${HOME_URL.replace(/^https:\/\/|\/$/g, '')}</a>`;
+      html = `For full screen, open ${link} in ${ios ? 'Safari' : 'Chrome'} and add it to your Home Screen.`;
+    } else if (embedded) return;
+    else if (ios) html = 'For full screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon.';
     else if (android) html = 'For full screen: open the <b>⋮</b> menu → <b>Add to Home screen</b>, then open it from the icon.';
     if (!html) return;
     $('installTip').innerHTML = html;
